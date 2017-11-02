@@ -10,7 +10,7 @@ You will need three packages to complete this assignment: "dplyr", "tidyr" and a
 
 ```{r}
 
-install.packages("ggplot2") #If this doesn't work, use the "Packages" tab to install the package.
+#install.packages("ggplot2") #If this doesn't work, use the "Packages" tab to install the package.
 
 library(dplyr)
 library(tidyr)
@@ -21,7 +21,7 @@ library(ggplot2)
 Now, upload the file "Class_Motivation.csv" from the Assignment 3 Repository as a data frame called "K1""
 ```{r}
 
-K1 <- read.table(...)
+K1 <- read.table("/Users/cici/assignment-3-ysycici/Class_Motivation.csv", sep = ",", header=TRUE)
 
 ```
 
@@ -39,7 +39,9 @@ K2 <- dplyr::select(K1, 2:6)
 
 It is important to think about the meaning of missing values when clustering. We could treat them as having meaning or we could remove those people who have them. Neither option is ideal. What problems do you foresee if we recode or remove these values? Write your answers below:
 
+### problems if we recode the values: It might induce bias and influence the results. For example, missing values are not randomly distriuted across the observation, while we treat it with the method on the premise that is it randomly distributed.
 
+### problems if we remove the values: There might be patterns / important information among the missing values. Also, it contains other useful information except the missing value part. Removing them will lose information, especially when there are lots of missign values.
 
 We will remove people with missing values for this assignment, but keep in mind the issues that you have identified.
 
@@ -153,6 +155,29 @@ K7 <- dplyr::count(K4, cluster)
 
 Look at the number of people in each cluster, now repeat this process for 3 rather than 2 clusters. Which cluster grouping do you think is more informative? Write your answer below:
 
+### Two-cluster grouping is more informative. Because there is no overlap among the clusters based on the visualization.
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+K1 <- read.table("/Users/cici/assignment-3-ysycici/Class_Motivation.csv", sep = ",", header=TRUE)
+K2 <- dplyr::select(K1, 2:6)
+K3 <- na.omit(K2)
+K3 <- scale(K3)
+fit <- kmeans(K3, 3) 
+fit$cluster
+K4 <- data.frame(K3, fit$cluster)
+names(K4) <- c("1", "2", "3", "4", "5", "cluster")
+K5 <- tidyr::gather(K4, "week", "motivation", 1:5)
+K6 <- K5 %>% group_by(week, cluster)
+K6 <- summarise(K6, avg = mean(motivation))
+K6$week <- as.numeric(K6$week)
+K6$cluster <- as.factor(K6$cluster)
+ggplot(K6, aes(week, avg, colour = cluster)) + geom_line() + xlab("Week") + ylab("Average Motivation")
+K7 <- dplyr::count(K4, cluster)
+```
+
 
 Once you have done this, save both of your plots to the Assignment 5 file. Create a Zotero item to index your new computer program (Assignment 5.rmd) in Zotero. Then commit your assignment, push it to your Github account and then Pull request your version to the original assignment version so I can see it.
 
@@ -160,9 +185,68 @@ Once you have done this, save both of your plots to the Assignment 5 file. Creat
 
 Now, try to do the same for the data [collected in class](https://tccolumbia.qualtrics.com/SE/?SID=SV_6RRqlSAM6lZWYQt). Create two groups of clusters, the answers to the questions and regions where people grew up. 
 
+```{r}
+library(dplyr)
+C1 <- read.table("/Users/cici/assignment-3-ysycici/HUDK4050_2017_Cluster_Survey.csv", sep = ",", header=TRUE)
+C2 <- dplyr::select(C1,3:15)
+C2 <- na.omit(C2) #already fill one blank of state.grew based on the answer of city.grew
+C2$cat <- ifelse(C2$cat=="Yes",1,0)
+C2$gif.jiff <- ifelse(C2$gif.jiff=="g-iff",1,2)
+
+library(ggmap)
+G1 <- geocode(as.character(C2$city.grew))
+C3 <- dplyr::select(C2,1:10)
+C3 <- cbind.data.frame(C3,G1)
+
+library(ggplot2)
+G2 <- scale(G1)
+fit <- kmeans(G2,2)
+G3 <- data.frame(G2,fit$cluster)
+names(G3)[3] <- c("cluster1")
+G3$cluster1 <- as.factor(G3$cluster1)
+ggplot(G3, aes(lon, lat, colour = cluster1)) + geom_point() + xlab("Longitude") + ylab("Latitude")
+
+C3 <- scale(C3)
+fit <- kmeans(C3,2)
+C4 <- data.frame(C3,fit$cluster)
+names(C4)[13] <- c("cluster2")
+C4$cluster2 <- as.factor(C4$cluster2)
+```
+
+
 ##Part III
 
 Create a visualization that shows the overlap between the two groups of clusters you created in part III.
+
+```{r}
+V1 <- cbind.data.frame(G1,G3$cluster1,C4$cluster2)
+names(V1)[3] <- c("cluster1")
+names(V1)[4] <- c("cluster2")
+
+world <- map_data("world") 
+#ggplot() + geom_polygon(data = world, aes(x=long, y = lat, group = group))  
+#ggplot() + geom_point(data=V1, aes(x=lon, y=lat), color = V1$cluster1)
+#ggplot() + geom_point(data=V1, aes(x=lon, y=lat), color = V1$cluster2)
+
+#ggplot() + geom_polygon(data = world, aes(x=long, y = lat, group = group)) + geom_point(data=V1, aes(x=lon, y=lat), color = V1$cluster1)
+
+library(plyr)
+find_hull <- function(V1) V1[chull(V1$lon, V1$lat), ]
+hulls <- ddply(V1, "cluster2", find_hull)
+region <- V1$cluster1
+questions <- hulls$cluster2
+
+ggplot() + 
+  geom_polygon(data = world, aes(x=long, y = lat, group = group), fill="grey40", colour="grey90") + 
+  labs(x="", y="", title="Overlap Between The Two Groups of Clusters")+
+  geom_point(aes(x=lon, y=lat, color=region), data=V1)+
+  geom_polygon(data = hulls, aes(x=lon, y = lat, group = cluster2, color = questions, fill = questions, alpha = 0.01))+
+  coord_equal(ratio=1)
+
+#p+scale_color_manual(values=c("green","yellow"))
+#p+scale_shape_manual(values=c("circle","stars"))
+```
+
 
 Code Book:
 
